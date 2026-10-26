@@ -3896,10 +3896,8 @@ class flat_hash_multi_set_gt {
         if (this == &other)
             return *this;
 
-        // Clear existing data
-        clear();
-        if (data_)
-            allocator_t{}.deallocate(data_, buckets_ * bytes_per_bucket());
+        // Release existing data, so a failed allocation below leaves an empty table
+        reset();
 
         // Allocate new memory
         checked_size_result_t bytes = checked_mul(other.buckets_, bytes_per_bucket());
