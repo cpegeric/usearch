@@ -414,6 +414,20 @@ USEARCH_EXPORT size_t usearch_filtered_search(                                //
     usearch_key_t* keys, usearch_distance_t* distances, usearch_error_t* error);
 
 /**
+ *  @brief  Same as `usearch_filtered_search`, but walks the base layer with ACORN-1: only vectors the filter
+ *          accepts enter the candidate list, and the walk bridges over rejected neighbors by one extra hop.
+ *          It is faster when the filter accepts a small fraction of the index, and less accurate when that
+ *          fraction is very small, so the caller decides when to use it. Requesting more than `count`
+ *          results and keeping the first `count` widens the walk and raises recall.
+ *  @return Number of found matches.
+ */
+USEARCH_EXPORT size_t usearch_filtered_search_acorn(                          //
+    usearch_index_t index,                                                    //
+    void const* query_vector, usearch_scalar_kind_t query_kind, size_t count, //
+    usearch_filtered_search_callback_t filter, void* filter_state,            //
+    usearch_key_t* keys, usearch_distance_t* distances, usearch_error_t* error);
+
+/**
  *  @brief Retrieves the vector associated with the given key from the index.
  *  @param[in] index The handle to the USearch index to be queried.
  *  @param[in] key The key of the vector to retrieve.

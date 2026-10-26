@@ -1736,6 +1736,10 @@ struct index_search_config_t {
 
     /// @brief Brute-forces exhaustive search over all entries in the index.
     bool exact = false;
+
+    /// @brief Runs the ACORN-1 base-layer walk for a filtered search. The caller should set it
+    /// only when few members pass the predicate; otherwise the default walk is faster.
+    bool acorn = false;
 };
 
 struct index_cluster_config_t {
@@ -3559,7 +3563,7 @@ class index_gt {
 
             // For bottom layer we need a more optimized procedure
             if (!search_to_find_in_base_(query, metric, predicate, prefetch, closest_slot, expansion, wanted,
-                                         context))
+                                         config.acorn, context))
                 return result.failed("Out of memory!");
         }
 
@@ -4834,7 +4838,7 @@ class index_gt {
     template <typename value_at, typename metric_at, typename predicate_at, typename prefetch_at>
     bool search_to_find_in_base_(                                                               //
         value_at&& query, metric_at&& metric, predicate_at&& predicate, prefetch_at&& prefetch, //
-        compressed_slot_t start_slot, std::size_t expansion, std::size_t wanted,
+        compressed_slot_t start_slot, std::size_t expansion, std::size_t wanted, bool acorn,
         context_t& context) const usearch_noexcept_m {
 
         visits_hash_set_t& visits = context.visits;
@@ -4864,25 +4868,9 @@ class index_gt {
             top.insert_reserved({radius, start_slot});
         }
 
-        // ACORN-1 dispatch. The 2-hop "bridge" expansion below lets a filtered search hop over
-        // filtered-out members — a large win when the filter is SELECTIVE, but pure overhead when
-        // it is PERMISSIVE (there a plain traverse-through-all is both faster and higher recall).
-        // So estimate the filter's pass-rate from the entry point's base-layer neighborhood: a
-        // graph-LOCAL sample that reflects the filter density near the query (better than a uniform
-        // global sample for filters correlated with the vector space) and only re-checks members
-        // we are about to examine. Unfiltered searches always take the plain path. The `wanted`-
-        // gated fallback below is the safety net when this estimate is wrong or too noisy.
-        constexpr std::size_t acorn_selective_percent_k = 25; // ACORN when < 25% of local members pass
-        bool use_acorn = false;
-        if (!is_dummy<predicate_at>()) {
-            std::size_t passed = 0, sampled = 0;
-            neighbors_ref_t probe = neighbors_base_(node_at_(start_slot));
-            for (compressed_slot_t s : probe) {
-                passed += predicate(member_cref_t{node_at_(s).ckey(), s}) ? 1u : 0u;
-                ++sampled;
-            }
-            use_acorn = sampled != 0 && passed * 100u < acorn_selective_percent_k * sampled;
-        }
+        // ACORN-1 is chosen by the caller, who knows how selective the predicate is. Unfiltered
+        // searches always take the plain walk.
+        bool const use_acorn = acorn && !is_dummy<predicate_at>();
 
         while (!next.empty()) {
 

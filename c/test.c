@@ -243,6 +243,66 @@ void test_find_vector(size_t const collection_size, size_t const dimensions) {
     printf("Test: Find Vector - PASSED\n");
 }
 
+static int filter_every_tenth(usearch_key_t key, void* state) {
+    (void)state;
+    return key % 10 == 0;
+}
+
+static int filter_single_key(usearch_key_t key, void* state) { return key == *(usearch_key_t const*)state; }
+
+/**
+ *  Checks `usearch_filtered_search_acorn`: it returns at least one and at most `count` keys, all accepted by
+ *  the filter, and a filter accepting a single key gives the same result as `usearch_filtered_search`.
+ */
+void test_filtered_search_acorn(size_t const collection_size, size_t const dimensions) {
+    printf("Test: Filtered Search ACORN... %zu vectors, %zu dimensions \n", collection_size, dimensions);
+
+    usearch_error_t error = NULL;
+    usearch_init_options_t opts = create_options(dimensions);
+    usearch_index_t index = usearch_init(&opts, &error);
+    expect(!error, error);
+    usearch_reserve(index, collection_size, &error);
+    expect(!error, error);
+
+    float* data = create_vectors(collection_size, dimensions);
+    for (size_t i = 0; i < collection_size; ++i) {
+        usearch_add(index, (usearch_key_t)i, data + i * dimensions, usearch_scalar_f32_k, &error);
+        expect(!error, error);
+    }
+
+    size_t const wanted = 10;
+    size_t const passing = (collection_size + 9) / 10;
+    size_t const expected = passing < wanted ? passing : wanted;
+    usearch_key_t keys[10];
+    float distances[10];
+    usearch_key_t const single = collection_size / 2;
+
+    for (size_t i = 0; i < collection_size; ++i) {
+        float const* query = data + i * dimensions;
+        size_t count = usearch_filtered_search_acorn(index, query, usearch_scalar_f32_k, wanted, filter_every_tenth,
+                                                     NULL, keys, distances, &error);
+        expect(!error, error);
+        expect(count >= 1 && count <= expected, "ACORN search returned the wrong number of keys");
+        for (size_t j = 0; j < count; ++j)
+            expect(keys[j] % 10 == 0, "ACORN search returned a key the filter rejects");
+
+        count = usearch_filtered_search_acorn(index, query, usearch_scalar_f32_k, wanted, filter_single_key,
+                                              (void*)&single, keys, distances, &error);
+        expect(!error, error);
+        usearch_key_t plain_keys[10];
+        float plain_distances[10];
+        size_t plain_count = usearch_filtered_search(index, query, usearch_scalar_f32_k, wanted, filter_single_key,
+                                                     (void*)&single, plain_keys, plain_distances, &error);
+        expect(!error, error);
+        expect(count == plain_count && memcmp(keys, plain_keys, count * sizeof(usearch_key_t)) == 0,
+               "ACORN search must fall back to the plain walk when the filter accepts a single key");
+    }
+
+    free(data);
+    usearch_free(index, &error);
+    printf("Test: Filtered Search ACORN - PASSED\n");
+}
+
 /**
  *  This test checks the ability of the index to handle multiple vectors associated with the same key. It initializes
  *  the index with the multi-option enabled, reserves space, and adds multiple vectors with the same key. The test then
@@ -500,6 +560,7 @@ int main(int argc, char const* argv[]) {
             test_init(collection_sizes[index], dimensions[jdx]);
             test_add_vector(collection_sizes[index], dimensions[jdx]);
             test_find_vector(collection_sizes[index], dimensions[jdx]);
+            test_filtered_search_acorn(collection_sizes[index], dimensions[jdx]);
             test_get_vector(collection_sizes[index], dimensions[jdx]);
             test_remove_vector(collection_sizes[index], dimensions[jdx]);
             test_save_load(collection_sizes[index], dimensions[jdx]);

@@ -1400,6 +1400,31 @@ void test_filtered_search() {
         expect_eq(1u, results.size()); // ! Should not contain 0
         expect_eq(index_dense_t::key_t(10), results[0].member.key);
     }
+
+    // ACORN-1 walk: the same predicates, from every query, return only accepted keys.
+    for (std::size_t query = 0; query < dataset_count; query += 97) {
+        {
+            auto every_tenth = [](index_dense_t::key_t key) { return key % 10 == 0; };
+            auto results = index.filtered_search(vector_of_vectors[query].data(), 10, every_tenth, index.any_thread(),
+                                                 false, true);
+            expect_eq(10u, results.size());
+            for (std::size_t i = 0; i != results.size(); ++i)
+                expect(results[i].member.key % 10 == 0);
+        }
+        {
+            auto none = [](index_dense_t::key_t) { return false; };
+            auto results =
+                index.filtered_search(vector_of_vectors[query].data(), 10, none, index.any_thread(), false, true);
+            expect_eq(0u, results.size());
+        }
+        {
+            auto single = [](index_dense_t::key_t key) { return key == 10; };
+            auto results =
+                index.filtered_search(vector_of_vectors[query].data(), 10, single, index.any_thread(), false, true);
+            expect_eq(1u, results.size());
+            expect_eq(index_dense_t::key_t(10), results[0].member.key);
+        }
+    }
 }
 
 /**
